@@ -1,0 +1,159 @@
+@page "/forum/category/{CategoryId:int}"
+@using forum_test.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@inject ApplicationDbContext Db
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+@if (category == null)
+{
+    <div class="container mt-4">
+        <div class="empty-state">
+            <div class="empty-state-icon">❌</div>
+            <p>Розділ не знайдено</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="forum-header">
+        <div class="container">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1;">
+                    <div class="breadcrumb">
+                        <a href="/forum">🏛️ Форум</a>
+                        <span class="separator">›</span>
+                        <span>@category.Title</span>
+                    </div>
+                    <h1 class="forum-title">@category.Title</h1>
+                    @if (!string.IsNullOrEmpty(category.Description))
+                    {
+                        <p class="forum-subtitle">@category.Description</p>
+                    }
+                </div>
+                <AuthorizeView>
+                    <Authorized>
+                        <button class="btn-forum-primary" @onclick="CreateThread" style="height: fit-content; white-space: nowrap;">
+                            <span>✏️</span> Створити тему
+                        </button>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a href="Account/Login" class="btn-forum-primary" style="height: fit-content; text-decoration: none; white-space: nowrap;">
+                            <span>🔐</span> Увійти
+                        </a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        @if (category.Children?.Any() == true)
+        {
+            <div class="forum-section-header">
+                📁 Підрозділи (@category.Children.Count)
+            </div>
+            
+            <div class="category-box">
+                <ul class="subcategories-list" style="border-top: none; padding-top: 0; margin-top: 0;">
+                    @foreach (var child in category.Children)
+                    {
+                        <li style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color);">
+                            <li style="margin-bottom: 0; border-bottom: none;">
+                                <div>
+                                    <strong><a href="/forum/category/@child.Id">@child.Title</a></strong>
+                                    <div style="font-size: 0.85rem; color: var(--text-light); margin-top: 5px;">
+                                        Теми: @(child.Threads?.Count ?? 0) | Повідомлень: @(child.Threads?.Sum(t => t.Posts?.Count ?? 0) ?? 0)
+                                    </div>
+                                </div>
+                            </li>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="forum-section-header">
+            💬 Теми обговорення (@(threads?.Count ?? 0))
+        </div>
+
+        @if (threads?.Any() == true)
+        {
+            <table class="threads-table">
+                <thead>
+                    <tr>
+                        <th>📌 Заголовок</th>
+                        <th style="width: 150px;">👤 Автор</th>
+                        <th style="width: 150px;">📅 Дата</th>
+                        <th style="width: 100px; text-align: center;">💬 Повідомлень</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in threads)
+                    {
+                        <tr>
+                            <td>
+                                <a href="/thread/@t.Id" class="thread-title">@t.Title</a>
+                            </td>
+                            <td class="thread-author">@t.CreatedBy?.UserName</td>
+                            <td class="thread-date">@t.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                            <td class="thread-count">@(t.Posts?.Count ?? 0)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon">📭</div>
+                <p>У цьому розділі поки що немає тем</p>
+                <AuthorizeView>
+                    <Authorized>
+                        <button class="btn-forum-primary" @onclick="CreateThread" style="margin-top: 20px;">
+                            ✏️ Створити першу тему
+                        </button>
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int CategoryId { get; set; }
+    ForumCategory? category;
+    List<ForumThread>? threads;
+
+    protected override async Task OnInitializedAsync()
+    {
+        category = await Db.ForumCategories
+            .Where(c => c.Id == CategoryId)
+            .Include(c => c.Children)
+            .Include(c => c.Threads.OrderByDescending(t => t.CreatedAt))
+            .ThenInclude(t => t.CreatedBy)
+            .Include(c => c.Threads)
+            .ThenInclude(t => t.Posts)
+            .FirstOrDefaultAsync();
+
+        if (category != null)
+        {
+            threads = category.Threads.OrderByDescending(t => t.CreatedAt).ToList();
+        }
+    }
+
+    async Task CreateThread()
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (!user.Identity?.IsAuthenticated ?? true)
+        {
+            Navigation.NavigateTo("Account/Login");
+            return;
+        }
+
+        Navigation.NavigateTo($"/forum/category/{CategoryId}/create-thread");
+    }
+}

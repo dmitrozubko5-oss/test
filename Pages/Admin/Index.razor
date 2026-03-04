@@ -1,0 +1,212 @@
+@page "/admin"
+@using forum_test.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="forum-header">
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/forum">🏛️ Форум</a>
+            <span class="separator">›</span>
+            <span>⚙️ Адміністрація</span>
+        </div>
+        <h1 class="forum-title">⚙️ Адміністративна панель</h1>
+        <p class="forum-subtitle">Керування розділами форуму</p>
+    </div>
+</div>
+
+<div class="container">
+    <AuthorizeView>
+        <Authorized Context="AuthContext">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
+                <div>
+                    <div class="forum-section-header">
+                        📁 Дерево розділів
+                    </div>
+
+                    <div class="admin-tree">
+                        @if (categories == null)
+                        {
+                            <p>Завантаження...</p>
+                        }
+                        else if (!categories.Any())
+                        {
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📭</div>
+                                <p>Розділів не знайдено</p>
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var c in categories)
+                            {
+                                <div class="tree-node" style="margin-left: 0;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                        <strong style="color: #2c3e50;">📌 @c.Title</strong>
+                                        <div style="display: flex; gap: 5px;">
+                                            <button class="btn-forum-secondary btn-sm" @onclick="() => EditCategory(c.Id)">✎</button>
+                                            <button class="btn-forum-secondary btn-sm" style="color: #e74c3c;" @onclick="() => DeleteCategory(c.Id)">✕</button>
+                                        </div>
+                                    </div>
+
+                                    @if (c.Children?.Any() == true)
+                                    {
+                                        @foreach (var ch in c.Children)
+                                        {
+                                            <div class="tree-node">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <span>📂 @ch.Title</span>
+                                                    <div style="display: flex; gap: 5px;">
+                                                        <button class="btn-forum-secondary btn-sm" @onclick="() => EditCategory(ch.Id)">✎</button>
+                                                        <button class="btn-forum-secondary btn-sm" style="color: #e74c3c;" @onclick="() => DeleteCategory(ch.Id)">✕</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+
+                <div>
+                    <div class="forum-section-header">
+                        ✏️ @(editModel.Id.HasValue ? "Редагування" : "Створення розділу")
+                    </div>
+
+                    <div style="background-color: white; border: 1px solid #ecf0f1; border-top: none; border-radius: 0 0 4px 4px; padding: 20px;">
+                        <EditForm Model="editModel" OnValidSubmit="SaveCategory" Context="formCtx">
+                            <div class="form-group">
+                                <label class="form-label">Назва розділу *</label>
+                                <InputText class="form-control" @bind-value="editModel.Title" placeholder="Введіть назву..." />
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Опис (необов'язково)</label>
+                                <InputTextArea class="form-control" rows="3" @bind-value="editModel.Description" placeholder="Введіть опис розділу..." />
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Батьківський розділ</label>
+                                <select class="form-control" @bind="editModel.ParentId">
+                                    <option value="">📍 Кореневий рівень</option>
+                                    @if (allCategories != null)
+                                    {
+                                        @foreach (var c in allCategories.Where(x => !editModel.Id.HasValue || x.Id != editModel.Id))
+                                        {
+                                            <option value="@c.Id">└─ @c.Title</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+
+                            <div style="display: flex; gap: 10px;">
+                                <button type="submit" class="btn-forum-primary">
+                                    <span>✓</span> @(editModel.Id.HasValue ? "Оновити" : "Створити")
+                                </button>
+                                @if (editModel.Id.HasValue)
+                                {
+                                    <button type="button" class="btn-forum-secondary" @onclick="NewCategory">
+                                        <span>➕</span> Новий
+                                    </button>
+                                }
+                            </div>
+                        </EditForm>
+                    </div>
+
+                    <div style="margin-top: 20px; background-color: #f8f9fa; border: 1px solid #ecf0f1; border-radius: 4px; padding: 15px;">
+                        <strong style="color: #2c3e50;">📊 Статистика:</strong>
+                        <div style="margin-top: 10px; font-size: 0.9rem; color: #7f8c8d;">
+                            <div>✓ Розділів: @(categories?.Count ?? 0)</div>
+                            <div>✓ Підрозділів: @(categories?.Sum(c => c.Children?.Count ?? 0) ?? 0)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <div style="margin-top: 20px;">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔐</div>
+                    <p>Ви не маєте доступу до адміністративної панелі.</p>
+                    <p style="font-size: 0.9rem; color: #7f8c8d;">Потрібна роль <strong>Administrator</strong></p>
+                </div>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    List<ForumCategory>? categories;
+    List<ForumCategory>? allCategories;
+
+    class EditModel
+    {
+        public int? Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public int? ParentId { get; set; }
+    }
+
+    EditModel editModel = new EditModel();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    async Task Load()
+    {
+        allCategories = await Db.ForumCategories.ToListAsync();
+        categories = await Db.ForumCategories
+            .Where(c => c.ParentId == null)
+            .Include(c => c.Children)
+            .ToListAsync();
+    }
+
+    void NewCategory()
+    {
+        editModel = new EditModel();
+    }
+
+    async Task EditCategory(int id)
+    {
+        var c = await Db.ForumCategories.FindAsync(id);
+        if (c == null) return;
+        editModel = new EditModel { Id = c.Id, Title = c.Title, Description = c.Description, ParentId = c.ParentId };
+    }
+
+    async Task SaveCategory()
+    {
+        if (editModel.Id.HasValue)
+        {
+            var c = await Db.ForumCategories.FindAsync(editModel.Id.Value);
+            if (c == null) return;
+            c.Title = editModel.Title;
+            c.Description = editModel.Description;
+            c.ParentId = editModel.ParentId;
+            Db.ForumCategories.Update(c);
+        }
+        else
+        {
+            var c = new ForumCategory { Title = editModel.Title, Description = editModel.Description, ParentId = editModel.ParentId };
+            Db.ForumCategories.Add(c);
+        }
+        await Db.SaveChangesAsync();
+        await Load();
+    }
+
+    async Task DeleteCategory(int id)
+    {
+        var c = await Db.ForumCategories.FindAsync(id);
+        if (c == null) return;
+        Db.ForumCategories.Remove(c);
+        await Db.SaveChangesAsync();
+        await Load();
+    }
+}

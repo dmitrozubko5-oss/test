@@ -1,0 +1,46 @@
+﻿@inherits LayoutComponentBase
+
+<div class="page" style="display: flex; flex-direction: column; min-height: 100vh; width: 100%; margin: 0; padding: 0;">
+    <!-- Header with Navigation -->
+    <header class="forum-header-main" style="width: 100%; margin: 0; padding: 0;">
+        <NavMenu />
+    </header>
+
+    <!-- Main Content -->
+    <main style="flex: 1; background-color: #1a1a1a; width: 100%; margin: 0; padding: 0;">
+        <article style="width: 100%; margin: 0; padding: 0; background-color: #1a1a1a;">
+            @Body
+        </article>
+    </main>
+
+    <!-- Footer -->
+    <footer class="forum-footer" style="width: 100%; margin: 0;">
+        <div class="container" style="max-width: none; width: 100%;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; padding: 30px 20px;">
+                <div>
+                    <h4 style="color: #ff3d3d; margin-bottom: 15px;">📚 Про Форум</h4>
+                    <p style="color: #b0b0b0; font-size: 0.9rem; line-height: 1.6;">
+                        Сучасний форум для спілкування та обговорення важливих тем.
+                    </p>
+                </div>
+                <div>
+                    <h4 style="color: #ff3d3d; margin-bottom: 15px;">🔗 Посилання</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li><a href="/forum" style="color: #b0b0b0; text-decoration: none;">Форум</a></li>
+                        <li><a href="/Account/Login" style="color: #b0b0b0; text-decoration: none;">Вхід</a></li>
+                        <li><a href="/Account/Register" style="color: #b0b0b0; text-decoration: none;">Реєстрація</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 style="color: #ff3d3d; margin-bottom: 15px;">⚙️ Інформація</h4>
+                    <p style="color: #b0b0b0; font-size: 0.9rem;">
+                        © 2024 Forum. Всі права захищені.
+                    </p>
+                </div>
+            </div>
+            <div style="border-top: 1px solid #333333; padding: 20px; text-align: center; color: #b0b0b0; font-size: 0.85rem;">
+                <p>Розроблено на Blazor .NET 10</p>
+            </div>
+        </div>
+    </footer>
+</div>

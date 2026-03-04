@@ -1,0 +1,150 @@
+@page "/Account/Register"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using forum_test.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject ILogger<Register> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Реєстрація</PageTitle>
+
+<div style="max-width: 600px; margin: 40px auto; padding: 30px; background-color: #2d2d2d; border-radius: 8px; border-left: 4px solid #ff3d3d;">
+    <h1 style="color: #ffffff; margin-top: 0;">📝 Реєстрація</h1>
+    <p style="color: #b0b0b0; margin-bottom: 30px;">Створіть новий акаунт для доступу до форуму.</p>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <div style="background-color: #c33; color: white; padding: 12px; border-radius: 4px; margin-bottom: 20px;">
+            ❌ @Message
+        </div>
+    }
+
+    <EditForm Model="Input" method="post" OnValidSubmit="RegisterUser" FormName="register">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" role="alert" />
+
+        <div class="form-group" style="margin-bottom: 20px;">
+            <label for="Input.Email" style="color: #ffffff; display: block; margin-bottom: 8px; font-weight: 500;">📧 Email</label>
+            <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" style="background-color: #323232; color: #ffffff; border: 1px solid #444444; padding: 10px; border-radius: 4px;" aria-required="true" placeholder="your@email.com" />
+            <ValidationMessage For="() => Input.Email" class="text-danger" style="font-size: 0.85rem; margin-top: 5px;" />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+            <label for="Input.Password" style="color: #ffffff; display: block; margin-bottom: 8px; font-weight: 500;">🔐 Пароль</label>
+            <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" style="background-color: #323232; color: #ffffff; border: 1px solid #444444; padding: 10px; border-radius: 4px;" aria-required="true" placeholder="Мінімум 6 символів" />
+            <ValidationMessage For="() => Input.Password" class="text-danger" style="font-size: 0.85rem; margin-top: 5px;" />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 30px;">
+            <label for="Input.ConfirmPassword" style="color: #ffffff; display: block; margin-bottom: 8px; font-weight: 500;">🔐 Підтвердьте пароль</label>
+            <InputText type="password" @bind-Value="Input.ConfirmPassword" id="Input.ConfirmPassword" class="form-control" style="background-color: #323232; color: #ffffff; border: 1px solid #444444; padding: 10px; border-radius: 4px;" aria-required="true" placeholder="Повторіть пароль" />
+            <ValidationMessage For="() => Input.ConfirmPassword" class="text-danger" style="font-size: 0.85rem; margin-top: 5px;" />
+        </div>
+
+        <button type="submit" style="width: 100%; padding: 12px; background-color: #ff3d3d; color: white; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+            ✓ Зареєструватися
+        </button>
+    </EditForm>
+
+    <div style="margin-top: 30px; text-align: center; padding-top: 20px; border-top: 1px solid #444444;">
+        <p style="color: #b0b0b0; margin: 0;">Уже маєте акаунт? <a href="/Account/Login" style="color: #ff3d3d; text-decoration: none; font-weight: 600;">Увійти</a></p>
+    </div>
+</div>
+
+@code {
+    private IEnumerable<IdentityError>? identityErrors;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? Message => identityErrors is null ? null : string.Join(", ", identityErrors.Select(error => error.Description ?? "Unknown error"));
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+    }
+
+    public async Task RegisterUser(EditContext editContext)
+    {
+        try
+        {
+            var user = CreateUser();
+
+            // Use email as username
+            await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
+            var emailStore = GetEmailStore();
+            await emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
+
+            var result = await UserManager.CreateAsync(user, Input.Password);
+
+            if (!result.Succeeded)
+            {
+                identityErrors = result.Errors;
+                Logger.LogError($"Registration failed: {string.Join(", ", result.Errors.Select(e => $"{e.Code}: {e.Description}"))}");
+                return;
+            }
+
+            Logger.LogInformation($"User {Input.Email} created successfully.");
+
+            // Sign in immediately after registration
+            await SignInManager.SignInAsync(user, isPersistent: false);
+            Logger.LogInformation($"User {Input.Email} signed in successfully.");
+            RedirectManager.RedirectTo(ReturnUrl ?? "/forum");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "An error occurred during registration");
+            identityErrors = new[] { new IdentityError { Description = ex.Message } };
+        }
+    }
+
+    private ApplicationUser CreateUser()
+    {
+        try
+        {
+            return Activator.CreateInstance<ApplicationUser>();
+        }
+        catch
+        {
+            throw new InvalidOperationException($"Can't create an instance of '{nameof(ApplicationUser)}'. " +
+                $"Ensure that '{nameof(ApplicationUser)}' is not an abstract class and has a parameterless constructor.");
+        }
+    }
+
+    private IUserEmailStore<ApplicationUser> GetEmailStore()
+    {
+        if (!UserManager.SupportsUserEmail)
+        {
+            throw new NotSupportedException("The default UI requires a user store with email support.");
+        }
+        return (IUserEmailStore<ApplicationUser>)UserStore;
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Email обов'язковий")]
+        [EmailAddress(ErrorMessage = "Введіть правильний email")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Пароль обов'язковий")]
+        [StringLength(100, ErrorMessage = "Пароль повинен мати від {2} до {1} символів.", MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Compare("Password", ErrorMessage = "Паролі не збігаються")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

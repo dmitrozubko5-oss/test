@@ -1,0 +1,263 @@
+@page "/admin/thread-permissions"
+@using forum_test.Data
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@using Microsoft.AspNetCore.Components.Routing
+@inject ApplicationDbContext Db
+@inject RoleManager<IdentityRole> RoleManager
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+<div class="forum-header">
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/forum">🏛️ Форум</a>
+            <span class="separator">›</span>
+            <a href="/admin">⚙️ Адмін</a>
+            <span class="separator">›</span>
+            <span>🔐 Права доступу тем</span>
+        </div>
+        <h1 class="forum-title">🔐 Керування правами доступу на темах</h1>
+        <p class="forum-subtitle">Обмеження прав написання на темах по ролям</p>
+    </div>
+</div>
+
+<div class="container">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
+        <!-- Теми -->
+        <div>
+            <div class="forum-section-header">
+                💬 Теми
+            </div>
+            <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: none; padding: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+                @if (threads == null)
+                {
+                    <p style="color: var(--text-light);">Завантаження...</p>
+                }
+                else if (!threads.Any())
+                {
+                    <p style="color: var(--text-light);">Тем не знайдено</p>
+                }
+                else
+                {
+                    @foreach (var thread in threads)
+                    {
+                        <div style="@(selectedThreadId == thread.Id ? "background-color: rgba(255, 61, 61, 0.2);" : "") padding: 12px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.3s ease;" @onclick="() => SelectThread(thread)">
+                            <strong style="color: var(--secondary-color);">@thread.Title</strong>
+                            <div style="font-size: 0.85rem; color: var(--text-light);">
+                                📁 @thread.Category?.Title
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- Права доступу вибраної теми -->
+        <div>
+            <div class="forum-section-header">
+                🔐 Права для: @(selectedThread?.Title ?? "вибрати тему")
+            </div>
+            <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: none; padding: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+                @if (selectedThread == null)
+                {
+                    <p style="color: var(--text-light);">Виберіть тему зліва</p>
+                }
+                else
+                {
+                    <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color);">
+                        <h4 style="color: var(--secondary-color); margin-bottom: 10px;">🔒 Общие настройки:</h4>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <label style="color: var(--text-dark); display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" @bind="selectedThread.IsRestrictedByRole" @onchange="UpdateThreadSettings" style="width: 18px; height: 18px; cursor: pointer;" />
+                                <span>Обмежити доступ деякими ролями</span>
+                            </label>
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <label style="color: var(--text-dark); display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" @bind="selectedThread.AllowAnonymousWrite" @onchange="UpdateThreadSettings" style="width: 18px; height: 18px; cursor: pointer;" />
+                                <span>Дозволити користувачам без ролей писати</span>
+                            </label>
+                        </div>
+
+                        <button class="btn-forum-primary" @onclick="UpdateThreadSettings" style="padding: 8px 16px;">
+                            💾 Зберегти налаштування
+                        </button>
+                    </div>
+
+                    @if (selectedThread.IsRestrictedByRole)
+                    {
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="color: var(--secondary-color); margin-bottom: 10px;">➕ Додати роль:</h4>
+                            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                                <select @bind="selectedPermissionRoleId" style="flex: 1; padding: 8px; background-color: var(--hover-color); color: var(--text-dark); border: 1px solid var(--border-color); border-radius: 4px;">
+                                    <option value="">-- Виберіть роль --</option>
+                                    @if (availableRoles != null)
+                                    {
+                                        @foreach (var role in availableRoles.Where(r => !rolePermissions.Any(rp => rp.RoleId == r.Id)))
+                                        {
+                                            <option value="@role.Id">@role.Name</option>
+                                        }
+                                    }
+                                </select>
+                                <button class="btn-forum-primary" @onclick="AddRolePermission" style="padding: 8px 16px;">
+                                    ➕ Додати
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 style="color: var(--secondary-color); margin-bottom: 10px;">🏷️ Дозволені ролі:</h4>
+                            @if (!rolePermissions.Any())
+                            {
+                                <p style="color: var(--text-light);">Жодна роль не доданапа</p>
+                            }
+                            else
+                            {
+                                @foreach (var permission in rolePermissions)
+                                {
+                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: var(--hover-color); border-radius: 4px; margin-bottom: 8px;">
+                                        <div style="flex: 1;">
+                                            <strong style="color: var(--secondary-color);">@permission.Role?.Name</strong>
+                                            <div style="font-size: 0.85rem; color: var(--text-light); margin-top: 5px;">
+                                                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px; cursor: pointer;">
+                                                    <input type="checkbox" @bind="permission.CanWrite" @onchange="() => UpdatePermission(permission)" style="width: 14px; height: 14px;" />
+                                                    <span>Може писати</span>
+                                                </label>
+                                                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px; cursor: pointer;">
+                                                    <input type="checkbox" @bind="permission.CanEdit" @onchange="() => UpdatePermission(permission)" style="width: 14px; height: 14px;" />
+                                                    <span>Може редагувати</span>
+                                                </label>
+                                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                                    <input type="checkbox" @bind="permission.CanDelete" @onchange="() => UpdatePermission(permission)" style="width: 14px; height: 14px;" />
+                                                    <span>Може видаляти</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <button class="btn-forum-secondary" style="color: #e74c3c; padding: 6px 12px;" @onclick="() => RemoveRolePermission(permission.Id)">
+                                            ✕ Видалити
+                                        </button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ForumThread>? threads;
+    private List<IdentityRole>? availableRoles;
+    
+    private ForumThread? selectedThread;
+    private int selectedThreadId;
+    private string? selectedPermissionRoleId;
+    private List<ThreadRolePermission> rolePermissions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadThreads();
+        await LoadRoles();
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Перезавантажуємо сторінку при навігації на цю ж сторінку
+        if (e.Location.Contains("/admin/thread-permissions"))
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadThreads()
+    {
+        threads = await Db.ForumThreads
+            .Include(t => t.Category)
+            .Include(t => t.CreatedBy)
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
+    }
+
+    private async Task LoadRoles()
+    {
+        availableRoles = await RoleManager.Roles.ToListAsync();
+    }
+
+    private async Task SelectThread(ForumThread thread)
+    {
+        selectedThread = thread;
+        selectedThreadId = thread.Id;
+        await LoadRolePermissions();
+    }
+
+    private async Task LoadRolePermissions()
+    {
+        if (selectedThread == null)
+            return;
+
+        rolePermissions = await Db.ThreadRolePermissions
+            .Where(trp => trp.ThreadId == selectedThread.Id)
+            .Include(trp => trp.Role)
+            .ToListAsync();
+    }
+
+    private async Task UpdateThreadSettings()
+    {
+        if (selectedThread == null)
+            return;
+
+        Db.ForumThreads.Update(selectedThread);
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task AddRolePermission()
+    {
+        if (selectedThread == null || string.IsNullOrEmpty(selectedPermissionRoleId))
+            return;
+
+        var permission = new ThreadRolePermission
+        {
+            ThreadId = selectedThread.Id,
+            RoleId = selectedPermissionRoleId,
+            CanWrite = true,
+            CanEdit = true,
+            CanDelete = false
+        };
+
+        Db.ThreadRolePermissions.Add(permission);
+        await Db.SaveChangesAsync();
+
+        selectedPermissionRoleId = null;
+        await LoadRolePermissions();
+    }
+
+    private async Task UpdatePermission(ThreadRolePermission permission)
+    {
+        Db.ThreadRolePermissions.Update(permission);
+        await Db.SaveChangesAsync();
+        await LoadRolePermissions();
+    }
+
+    private async Task RemoveRolePermission(int permissionId)
+    {
+        var permission = await Db.ThreadRolePermissions.FindAsync(permissionId);
+        if (permission != null)
+        {
+            Db.ThreadRolePermissions.Remove(permission);
+            await Db.SaveChangesAsync();
+            await LoadRolePermissions();
+        }
+    }
+
+    void IDisposable.Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

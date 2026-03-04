@@ -1,0 +1,227 @@
+﻿@implements IDisposable
+@inject NavigationManager NavigationManager
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+<nav class="forum-navbar">
+    <div class="navbar-container">
+        <!-- Logo -->
+        <div class="navbar-logo">
+            <a href="/" class="logo-link">
+                <span class="logo-icon">🎮</span>
+                <span class="logo-text">Forum</span>
+            </a>
+        </div>
+
+        <!-- Main Menu -->
+        <div class="navbar-menu">
+            <div class="nav-item">
+                <NavLink href="" Match="NavLinkMatch.All" class="nav-link">
+                    <span>🏠</span> Головна
+                </NavLink>
+            </div>
+
+            <div class="nav-item">
+                <NavLink href="forum" class="nav-link">
+                    <span>💬</span> Форум
+                </NavLink>
+            </div>
+
+            <AuthorizeView>
+                <Authorized>
+                    <div class="nav-item dropdown" @onclick="ToggleAdminDropdown" style="position: relative;">
+                        <button class="nav-link dropdown-toggle" style="background: none; border: none; padding: 8px 16px; cursor: pointer;">
+                            <span>⚙️</span> Адмін
+                            <span style="margin-left: 8px;">▼</span>
+                        </button>
+
+                        @if (showAdminDropdown)
+                        {
+                            <div class="dropdown-menu" style="display: block;">
+                                <a href="admin" class="dropdown-item" @onclick="CloseAllDropdowns">
+                                    📁 Розділи
+                                </a>
+                                <a href="admin/users-roles" class="dropdown-item" @onclick="CloseAllDropdowns">
+                                    👥 Ролі користувачів
+                                </a>
+                                <a href="admin/thread-permissions" class="dropdown-item" @onclick="CloseAllDropdowns">
+                                    🔐 Права тем
+                                </a>
+                            </div>
+                        }
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+
+        <!-- Right Menu (Auth & User) -->
+        <div class="navbar-right">
+            <AuthorizeView>
+                <Authorized>
+                    <div class="nav-item dropdown" @onclick="ToggleUserDropdown" style="position: relative;">
+                        <button class="nav-link dropdown-toggle" style="background: none; border: none; padding: 8px 16px; cursor: pointer;">
+                            <span class="user-avatar">👤</span>
+                            <span class="user-name">@context.User.Identity?.Name</span>
+                            <span style="margin-left: 8px;">▼</span>
+                        </button>
+
+                        @if (showUserDropdown)
+                        {
+                            <div class="dropdown-menu" style="display: block;">
+                                <a href="Account/Manage" class="dropdown-item">
+                                    ⚙️ Налаштування профілю
+                                </a>
+                                <form action="Account/Logout" method="post" style="display: contents;">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                                    <button type="submit" class="dropdown-item" style="background: none; border: none; width: 100%; text-align: left; cursor: pointer;">
+                                        🚪 Вихід
+                                    </button>
+                                </form>
+                            </div>
+                        }
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <div class="nav-item dropdown" @onclick="ToggleAuthDropdown" style="position: relative;">
+                        <button class="nav-link dropdown-toggle" style="background: none; border: none; padding: 8px 16px; cursor: pointer; color: var(--secondary-color); font-weight: 600;">
+                            🔐 Вхід
+                            <span style="margin-left: 8px;">▼</span>
+                        </button>
+
+                        @if (showAuthDropdown)
+                        {
+                            <div class="dropdown-menu" style="display: block; right: 0;">
+                                <a href="Account/Login" class="dropdown-item">
+                                    🔐 Увійти
+                                </a>
+                                <a href="Account/Register" class="dropdown-item">
+                                    📝 Зареєструватися
+                                </a>
+                            </div>
+                        }
+                    </div>
+                </NotAuthorized>
+            </AuthorizeView>
+
+            <!-- Search Icon -->
+            <button class="search-btn" title="Пошук" style="background: none; border: none; color: var(--text-dark); font-size: 1.3rem; cursor: pointer; padding: 8px 12px; border-radius: 4px; transition: all 0.3s ease;">
+                🔍
+            </button>
+        </div>
+    </div>
+</nav>
+
+<style>
+    .dropdown {
+        position: relative;
+    }
+
+    .dropdown-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background-color: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        margin-top: 8px;
+        min-width: 200px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+    }
+
+    .dropdown-item {
+        display: block;
+        width: 100%;
+        padding: 12px 16px;
+        text-align: left;
+        text-decoration: none;
+        color: var(--text-dark);
+        border: none;
+        background: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 0.95rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .dropdown-item:last-child {
+        border-bottom: none;
+    }
+
+    .dropdown-item:hover {
+        background-color: rgba(255, 61, 61, 0.1);
+        color: var(--secondary-color);
+    }
+
+    .user-avatar {
+        font-size: 1.2rem;
+    }
+
+    .user-name {
+        color: var(--secondary-color);
+        font-weight: 600;
+    }
+</style>
+
+@code {
+    private string? currentUrl;
+    private bool showUserDropdown = false;
+    private bool showAuthDropdown = false;
+    private bool showAdminDropdown = false;
+
+    protected override void OnInitialized()
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        showUserDropdown = false;
+        showAuthDropdown = false;
+        showAdminDropdown = false;
+        StateHasChanged();
+    }
+
+    private void ToggleUserDropdown()
+    {
+        showUserDropdown = !showUserDropdown;
+        showAuthDropdown = false;
+        showAdminDropdown = false;
+    }
+
+    private void ToggleAuthDropdown()
+    {
+        showAuthDropdown = !showAuthDropdown;
+        showUserDropdown = false;
+        showAdminDropdown = false;
+    }
+
+    private void ToggleAdminDropdown()
+    {
+        showAdminDropdown = !showAdminDropdown;
+        showUserDropdown = false;
+        showAuthDropdown = false;
+    }
+
+    private void CloseAllDropdowns()
+    {
+        showAdminDropdown = false;
+        showUserDropdown = false;
+        showAuthDropdown = false;
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}
+

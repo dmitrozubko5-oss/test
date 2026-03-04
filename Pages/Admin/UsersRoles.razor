@@ -1,0 +1,248 @@
+@page "/admin/users-roles"
+@using forum_test.Data
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@using Microsoft.AspNetCore.Components.Routing
+@inject ApplicationDbContext Db
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+<div class="forum-header">
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/forum">🏛️ Форум</a>
+            <span class="separator">›</span>
+            <a href="/admin">⚙️ Адмін</a>
+            <span class="separator">›</span>
+            <span>👥 Ролі користувачів</span>
+        </div>
+        <h1 class="forum-title">👥 Керування ролями користувачів</h1>
+        <p class="forum-subtitle">Видача та відозвання ролей користувачам</p>
+    </div>
+</div>
+
+<div class="container">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
+        <!-- Користувачі -->
+        <div>
+            <div class="forum-section-header">
+                👥 Користувачі
+            </div>
+            <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: none; padding: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+                @if (users == null)
+                {
+                    <p style="color: var(--text-light);">Завантаження...</p>
+                }
+                else if (!users.Any())
+                {
+                    <p style="color: var(--text-light);">Користувачів не знайдено</p>
+                }
+                else
+                {
+                    @foreach (var user in users)
+                    {
+                        <div style="@(selectedUserId == user.Id ? "background-color: rgba(255, 61, 61, 0.2); padding: 12px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.3s ease;" : "padding: 12px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.3s ease;")" @onclick="() => SelectUser(user)">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong style="color: var(--text-dark);">@user.Email</strong>
+                                    <div style="font-size: 0.85rem; color: var(--text-light);">@user.UserName</div>
+                                </div>
+                                <div style="font-size: 0.8rem; background-color: var(--secondary-color); color: white; padding: 4px 8px; border-radius: 3px;">
+                                    @(userRoles.ContainsKey(user.Id) ? userRoles[user.Id].Count : 0) ролей
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- Керування ролями вибраного користувача -->
+        <div>
+            <div class="forum-section-header">
+                🏷️ Ролі @(selectedUser?.Email ?? "вибрати користувача")
+            </div>
+            <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: none; padding: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+                @if (selectedUser == null)
+                {
+                    <p style="color: var(--text-light);">Виберіть користувача зліва</p>
+                }
+                else
+                {
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: var(--secondary-color); margin-bottom: 10px;">Додати роль:</h4>
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <select @bind="selectedRoleId" style="flex: 1; padding: 8px; background-color: var(--hover-color); color: var(--text-dark); border: 1px solid var(--border-color); border-radius: 4px;">
+                                <option value="">-- Виберіть роль --</option>
+                                @if (availableRoles != null)
+                                {
+                                    @foreach (var role in availableRoles)
+                                    {
+                                        <option value="@role.Id">@role.Name</option>
+                                    }
+                                }
+                            </select>
+                            <button class="btn-forum-primary" @onclick="AddRole" style="padding: 8px 16px;">
+                                ➕ Додати
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 style="color: var(--secondary-color); margin-bottom: 10px;">Поточні ролі:</h4>
+                        @if (currentUserRoles == null || !currentUserRoles.Any())
+                        {
+                            <p style="color: var(--text-light);">Немає ролей</p>
+                        }
+                        else
+                        {
+                            @foreach (var role in currentUserRoles)
+                            {
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: var(--hover-color); border-radius: 4px; margin-bottom: 8px;">
+                                    <div>
+                                        <strong style="color: var(--secondary-color);">@role.Role?.Name</strong>
+                                        @if (role.ExpiresAt.HasValue)
+                                        {
+                                            <div style="font-size: 0.85rem; color: #ff9800;">
+                                                ⏰ Закінчується: @role.ExpiresAt.Value.ToLocalTime().ToString("dd.MM.yyyy")
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(role.Reason))
+                                        {
+                                            <div style="font-size: 0.85rem; color: var(--text-light);">
+                                                Причина: @role.Reason
+                                            </div>
+                                        }
+                                    </div>
+                                    <button class="btn-forum-secondary" style="color: #e74c3c; padding: 6px 12px;" @onclick="() => RemoveRole(role.Id)">
+                                        ✕ Видалити
+                                    </button>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ApplicationUser>? users;
+    private List<IdentityRole>? roles;
+    private Dictionary<string, List<UserRole>> userRoles = new();
+
+    private ApplicationUser? selectedUser;
+    private string? selectedUserId;
+    private string? selectedRoleId;
+    private List<IdentityRole>? availableRoles;
+    private List<UserRole>? currentUserRoles;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+        await LoadRoles();
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Перезавантажуємо сторінку при навігації на цю ж сторінку
+        if (e.Location.Contains("/admin/users-roles"))
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        users = await Db.Users.OrderBy(u => u.Email).ToListAsync();
+
+        // Завантажимо ролі для кожного користувача
+        foreach (var user in users)
+        {
+            var userRolesList = await Db.UserRoles
+                .Where(ur => ur.UserId == user.Id)
+                .Include(ur => ur.Role)
+                .ToListAsync();
+            userRoles[user.Id] = userRolesList;
+        }
+    }
+
+    private async Task LoadRoles()
+    {
+        roles = await RoleManager.Roles.ToListAsync();
+        availableRoles = roles;
+    }
+
+    private async Task SelectUser(ApplicationUser user)
+    {
+        selectedUser = user;
+        selectedUserId = user.Id;
+        await LoadUserRoles();
+    }
+
+    private async Task LoadUserRoles()
+    {
+        if (selectedUser == null)
+            return;
+
+        currentUserRoles = await Db.UserRoles
+            .Where(ur => ur.UserId == selectedUser.Id)
+            .Include(ur => ur.Role)
+            .Include(ur => ur.GrantedBy)
+            .ToListAsync();
+    }
+
+    private async Task AddRole()
+    {
+        if (selectedUser == null || string.IsNullOrEmpty(selectedRoleId))
+            return;
+
+        var role = await RoleManager.FindByIdAsync(selectedRoleId);
+        if (role == null)
+            return;
+
+        // Перевіримо, чи вже має цю роль
+        var existing = await Db.UserRoles
+            .FirstOrDefaultAsync(ur => ur.UserId == selectedUser.Id && ur.RoleId == selectedRoleId);
+
+        if (existing != null)
+            return; // Вже має цю роль
+
+        var userRole = new UserRole
+        {
+            UserId = selectedUser.Id,
+            RoleId = selectedRoleId,
+            GrantedAt = DateTime.UtcNow,
+            Reason = "Видана адміністратором"
+        };
+
+        Db.UserRoles.Add(userRole);
+        await Db.SaveChangesAsync();
+
+        selectedRoleId = null;
+        await LoadUserRoles();
+        await LoadUsers();
+    }
+
+    private async Task RemoveRole(int userRoleId)
+    {
+        var userRole = await Db.UserRoles.FindAsync(userRoleId);
+        if (userRole != null)
+        {
+            Db.UserRoles.Remove(userRole);
+            await Db.SaveChangesAsync();
+            await LoadUserRoles();
+            await LoadUsers();
+        }
+    }
+
+    void IDisposable.Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

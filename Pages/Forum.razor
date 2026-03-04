@@ -1,0 +1,139 @@
+@page "/forum"
+@using forum_test.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@using Microsoft.AspNetCore.Components.Authorization
+@inject ApplicationDbContext Db
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="forum-header">
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1 class="forum-title">🏛️ Форум</h1>
+                <p class="forum-subtitle">Спільнота обговорення та розвитку</p>
+            </div>
+            <AuthorizeView>
+                <Authorized>
+                    <button class="btn-forum-primary" @onclick="CreateThread" style="height: fit-content;">
+                        <span>✏️</span> Створити тему
+                    </button>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="Account/Login" class="btn-forum-primary" style="height: fit-content; text-decoration: none;">
+                        <span>✏️</span> Створити тему
+                    </a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    @if (categories == null)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon">⏳</div>
+            <p>Завантаження форуму...</p>
+        </div>
+    }
+    else if (!categories.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <p>Розділів поки що немає. Будьте першим!</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var c in categories)
+        {
+            <div class="forum-section-header">
+                📌 @c.Title
+            </div>
+
+            <div class="category-box">
+                <div class="category-header">
+                    <div>
+                        <div class="category-title">
+                            <a href="/forum/category/@c.Id">@c.Title</a>
+                        </div>
+                        @if (!string.IsNullOrEmpty(c.Description))
+                        {
+                            <small style="color: #7f8c8d;">@c.Description</small>
+                        }
+                    </div>
+                    <div class="category-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Теми:</span>
+                            <span class="stat-value">@(c.Threads?.Count ?? 0)</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Повідомлень:</span>
+                            <span class="stat-value">@(c.Threads?.Sum(t => t.Posts?.Count ?? 0) ?? 0)</span>
+                        </div>
+                    </div>
+                </div>
+
+                @if (c.Children?.Any() == true)
+                {
+                    <div class="subcategories">
+                        <div class="subcategories-label">📁 Підрозділи:</div>
+                        <ul class="subcategories-list">
+                            @foreach (var child in c.Children)
+                            {
+                                <li>
+                                    <a href="/forum/category/@child.Id">@child.Title</a>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    @if (categories?.Any() == true)
+    {
+        <div class="forum-stats">
+            <div class="stat-box">
+                <div class="stat-box-label">Всього тем</div>
+                <div class="stat-box-value">@(categories.Sum(c => c.Threads?.Count ?? 0))</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box-label">Всього повідомлень</div>
+                <div class="stat-box-value">@(categories.Sum(c => c.Threads?.Sum(t => t.Posts?.Count ?? 0) ?? 0))</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box-label">Розділів</div>
+                <div class="stat-box-value">@categories.Count</div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    List<ForumCategory>? categories;
+
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await Db.ForumCategories
+            .Where(c => c.ParentId == null)
+            .Include(c => c.Children)
+            .ThenInclude(ch => ch.Threads)
+            .Include(c => c.Threads)
+            .ThenInclude(t => t.Posts)
+            .ToListAsync();
+    }
+
+    void OpenCategory(int id)
+    {
+        Navigation.NavigateTo($"/forum/category/{id}");
+    }
+
+    void CreateThread()
+    {
+        Navigation.NavigateTo($"/forum");
+    }
+}

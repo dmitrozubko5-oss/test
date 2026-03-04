@@ -1,0 +1,202 @@
+@page "/thread/{ThreadId:int}"
+@using forum_test.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@inject ApplicationDbContext Db
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+@if (thread == null)
+{
+    <div class="container mt-4">
+        <div class="empty-state">
+            <div class="empty-state-icon">❌</div>
+            <p>Тема не знайдена</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="forum-header">
+        <div class="container">
+            <div class="breadcrumb">
+                <a href="/forum">🏛️ Форум</a>
+                <span class="separator">›</span>
+                <a href="/forum/category/@thread.CategoryId">@thread.Category?.Title</a>
+                <span class="separator">›</span>
+                <span>@thread.Title</span>
+            </div>
+            <h1 class="forum-title">@thread.Title</h1>
+            <p class="forum-subtitle">Створено @thread.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") користувачем <strong>@thread.CreatedBy?.UserName</strong></p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="forum-section-header">
+            💬 Повідомлення (@(thread.Posts?.Count ?? 0))
+        </div>
+
+        @if (thread.Posts?.Any() == true)
+        {
+            @foreach (var p in thread.Posts)
+            {
+                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: none; padding: 18px; display: flex; gap: 18px; align-items: flex-start; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+                    <div style="flex-shrink: 0; width: 70px; text-align: center;">
+                        <div style="width: 70px; height: 70px; background: linear-gradient(135deg, var(--secondary-color) 0%, var(--accent-color) 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.5rem; margin: 0 auto 8px;">
+                            @(p.CreatedBy?.UserName?[0].ToString().ToUpper() ?? "?")
+                        </div>
+                        <small style="color: var(--text-light);">@p.CreatedBy?.UserName</small>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 10px;">
+                            📅 @p.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                        </div>
+                        <div style="background-color: var(--hover-color); padding: 14px; border-radius: 4px; border-left: 3px solid var(--secondary-color); color: var(--text-dark); line-height: 1.5; white-space: pre-wrap;">
+                            @p.Content
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon">📭</div>
+                <p>Поки що немає повідомлень у цій темі</p>
+            </div>
+        }
+
+        <div class="forum-section-header" style="margin-top: 30px;">
+            ✍️ Відповісти
+        </div>
+
+        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: none; padding: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+            <AuthorizeView Context="AuthContext">
+                <Authorized>
+                    @if (!canUserWrite)
+                    {
+                        <div style="background-color: #c33; color: white; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
+                            ⛔ У вас немає прав для написання в цій темі. Дозволені ролі: @string.Join(", ", allowedRoles)
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Ваше повідомлення:</label>
+                            <textarea class="form-control" @bind="newPost" placeholder="Введіть ваш текст..." rows="8"></textarea>
+                        </div>
+                        <button class="btn-forum-primary" @onclick="AddPost">
+                            <span>➤</span> Відправити
+                        </button>
+                    }
+                </Authorized>
+                <NotAuthorized>
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔐</div>
+                        <p>Для відповіді необхідно <a href="Account/Login">увійти</a> або <a href="Account/Register">зареєструватися</a></p>
+                    </div>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int ThreadId { get; set; }
+    ForumThread? thread;
+    string newPost = string.Empty;
+    private bool canUserWrite = true;
+    private List<string> allowedRoles = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadThread();
+        await CheckUserWritePermission();
+    }
+
+    async Task LoadThread()
+    {
+        thread = await Db.ForumThreads
+            .Where(t => t.Id == ThreadId)
+            .Include(t => t.Category)
+            .Include(t => t.Posts.OrderBy(p => p.CreatedAt))
+            .ThenInclude(p => p.CreatedBy)
+            .Include(t => t.CreatedBy)
+            .Include(t => t.RolePermissions)
+            .ThenInclude(r => r.Role)
+            .FirstOrDefaultAsync();
+    }
+
+    async Task CheckUserWritePermission()
+    {
+        if (thread == null)
+            return;
+
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+
+        // Якщо користувач не аутентифікований, перевіримо AnonymousWrite
+        if (!user.Identity?.IsAuthenticated ?? true)
+        {
+            canUserWrite = thread.AllowAnonymousWrite;
+            return;
+        }
+
+        // Якщо немає обмежень по ролям
+        if (!thread.IsRestrictedByRole || !thread.RolePermissions.Any())
+        {
+            canUserWrite = true;
+            return;
+        }
+
+        // Отримуємо ролі користувача
+        var userRoles = user.FindAll("role").Select(c => c.Value).ToList();
+
+        // Отримуємо дозволені ролі з бази
+        var permittedRoles = thread.RolePermissions
+            .Where(rp => rp.CanWrite)
+            .Select(rp => rp.Role.Name)
+            .ToList();
+
+        allowedRoles = permittedRoles;
+
+        // Перевіримо, чи користувач має одну з дозволених ролей
+        canUserWrite = userRoles.Any(r => permittedRoles.Contains(r));
+    }
+
+    async Task AddPost()
+    {
+        if (string.IsNullOrWhiteSpace(newPost) || thread == null)
+            return;
+
+        if (!canUserWrite)
+        {
+            return;
+        }
+
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (!user.Identity?.IsAuthenticated ?? true)
+        {
+            Navigation.NavigateTo("Account/Login");
+            return;
+        }
+
+        var userId = user.FindFirst(c => c.Type == "sub")?.Value ?? user.Identity!.Name!;
+
+        var post = new ForumPost
+        {
+            Content = newPost,
+            ThreadId = thread.Id,
+            CreatedById = userId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        Db.ForumPosts.Add(post);
+        await Db.SaveChangesAsync();
+
+        newPost = string.Empty;
+        await LoadThread();
+    }
+}

@@ -1,0 +1,124 @@
+@page "/forum/category/{CategoryId:int}/create-thread"
+@using forum_test.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@using Microsoft.AspNetCore.Components.Forms
+@inject ApplicationDbContext Db
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="forum-header">
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/forum">🏛️ Форум</a>
+            <span class="separator">›</span>
+            @if (category != null)
+            {
+                <a href="/forum/category/@category.Id">@category.Title</a>
+                <span class="separator">›</span>
+            }
+            <span>Створення нової теми</span>
+        </div>
+        <h1 class="forum-title">✏️ Створити нову тему</h1>
+    </div>
+</div>
+
+<div class="container">
+    @if (category == null)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon">❌</div>
+            <p>Розділ не знайдено</p>
+        </div>
+    }
+    else
+    {
+        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+            <p style="color: var(--text-light); margin-bottom: 20px;">
+                📁 Розділ: <strong style="color: var(--secondary-color);">@category.Title</strong>
+            </p>
+
+            <EditForm Model="newThread" OnValidSubmit="SaveThread" Context="formCtx">
+                <div class="form-group">
+                    <label for="title" class="form-label">Заголовок теми *</label>
+                    <InputText id="title" class="form-control" @bind-value="newThread.Title" placeholder="Введіть заголовок теми..." />
+                </div>
+
+                <div class="form-group">
+                    <label for="content" class="form-label">Текст повідомлення *</label>
+                    <InputTextArea id="content" class="form-control" rows="10" @bind-value="newThread.Content" placeholder="Введіть текст вашого повідомлення..." />
+                    <small style="color: var(--text-light);">Мінімум 10 символів</small>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn-forum-primary">
+                        <span>✓</span> Створити тему
+                    </button>
+                    <button type="button" class="btn-forum-secondary" @onclick="() => Navigation.NavigateTo($'/forum/category/{CategoryId}')">
+                        <span>✕</span> Скасувати
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int CategoryId { get; set; }
+    ForumCategory? category;
+
+    class ThreadModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
+
+    ThreadModel newThread = new ThreadModel();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (!user.Identity?.IsAuthenticated ?? true)
+        {
+            Navigation.NavigateTo("Account/Login");
+            return;
+        }
+
+        category = await Db.ForumCategories.FindAsync(CategoryId);
+    }
+
+    async Task SaveThread()
+    {
+        if (string.IsNullOrWhiteSpace(newThread.Title) || string.IsNullOrWhiteSpace(newThread.Content))
+            return;
+
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = auth.User.FindFirst(c => c.Type == "sub")?.Value ?? auth.User.Identity!.Name!;
+
+        var thread = new ForumThread
+        {
+            Title = newThread.Title,
+            CategoryId = CategoryId,
+            CreatedById = userId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        Db.ForumThreads.Add(thread);
+        await Db.SaveChangesAsync();
+
+        var post = new ForumPost
+        {
+            Content = newThread.Content,
+            ThreadId = thread.Id,
+            CreatedById = userId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        Db.ForumPosts.Add(post);
+        await Db.SaveChangesAsync();
+
+        Navigation.NavigateTo($"/thread/{thread.Id}");
+    }
+}
